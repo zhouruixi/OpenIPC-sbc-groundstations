@@ -32,21 +32,31 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare firmware
+      - name: Prepare build
         run: |
           echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
-          echo "CACHE_DATE=$(date +%m)" >> $GITHUB_ENV
           sudo apt update
-          sudo apt install -y cpio rsync bc qemu-user-static binfmt-support u-boot-tools
+          sudo apt install -y cpio rsync bc qemu-user-static binfmt-support u-boot-tools ccache
           sudo mkdir -p /mnt/workspace
           sudo chown $USER:$USER /mnt/workspace
           rsync -a "$GITHUB_WORKSPACE/" /mnt/workspace/
+          echo "CACHE_DATE=$(date +%m)" >> $GITHUB_ENV
+          echo "BR2_DL_DIR=~/.buildroot-dl" >> $GITHUB_ENV
+          ccache --set-config=compression=true
+          ccache --set-config=compression_level=6
+          ccache --set-config=compiler_check=content
+          ccache --set-config=sloppiness=time_macros
+          ccache --show-config
+          ccache -z
 
       - name: Setup ccache
         uses: actions/cache@v4
         with:
-          path: /tmp/ccache
+          path: |
+            ~/.buildroot-ccache
+            ~/.buildroot-dl
           key: ${{ matrix.platform }}-${{ env.CACHE_DATE }}
+          restore-keys: ${{ matrix.platform }}-
 
       - name: Build firmware
         working-directory: /mnt/workspace
@@ -55,9 +65,6 @@ jobs:
           export GIT_BRANCH=${GITHUB_REF_NAME}
           echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
           echo "GIT_BRANCH=${GITHUB_BRANCH}" >> $GITHUB_ENV
-
-          mkdir -p /tmp/ccache
-          ln -s /tmp/ccache ${HOME}/.ccache
 
           NAME=${{ matrix.platform }}
           DEFCONFIG=${NAME}_defconfig bash build.sh
